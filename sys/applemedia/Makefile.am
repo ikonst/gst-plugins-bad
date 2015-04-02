@@ -3,6 +3,7 @@ plugin_LTLIBRARIES = libgstapplemedia.la
 libgstapplemedia_la_SOURCES =			\
 	plugin.m				\
 	vtutil.c				\
+	corevideomemory.c			\
 	corevideobuffer.c			\
 	coremediabuffer.c			\
 	corevideotexturecache.m 		\
@@ -59,6 +60,7 @@ noinst_HEADERS =				\
 	vtenc.h					\
 	vtdec.h					\
 	vtutil.h				\
+	corevideomemory.h			\
 	corevideobuffer.h			\
 	coremediabuffer.h			\
 	atdec.h 				\
