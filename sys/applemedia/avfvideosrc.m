@@ -102,6 +102,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
   GstClockTime lastSampling;
   guint count;
   gint fps;
+  AVCaptureVideoOrientation orientation;
   BOOL captureScreen;
   BOOL captureScreenCursor;
   BOOL captureScreenMouseClicks;
@@ -117,6 +118,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
 @property int deviceIndex;
 @property BOOL doStats;
 @property int fps;
+@property AVCaptureVideoOrientation orientation;
 @property BOOL captureScreen;
 @property BOOL captureScreenCursor;
 @property BOOL captureScreenMouseClicks;
@@ -151,7 +153,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 
 @implementation GstAVFVideoSrcImpl
 
-@synthesize deviceIndex, doStats, fps, captureScreen,
+@synthesize deviceIndex, doStats, fps, orientation, captureScreen,
             captureScreenCursor, captureScreenMouseClicks;
 
 - (id)init
@@ -167,6 +169,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     pushSrc = src;
 
     deviceIndex = DEFAULT_DEVICE_INDEX;
+    orientation = AVCaptureVideoOrientationLandscapeRight;
     captureScreen = NO;
     captureScreenCursor = NO;
     captureScreenMouseClicks = NO;
@@ -302,6 +305,9 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     connection = [[output connections] firstObject];
     inputClock = ((AVCaptureInputPort *)connection.inputPorts[0]).clock;
 
+    /* rotates the image buffer physically */
+    [connection setVideoOrientation:orientation];
+
     *successPtr = YES;
   });
 
@@ -418,6 +424,11 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     /* formatDescription can't be retrieved with valueForKey so use a selector here */
     formatDescription = (CMFormatDescriptionRef) [f performSelector:@selector(formatDescription)];
     dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription);
+    if ([self swapWidthHeight]) {
+      int32_t tmp = dimensions.width;
+      dimensions.width = dimensions.height;
+      dimensions.height = tmp;
+    }
     for (NSObject *rate in [f valueForKey:@"videoSupportedFrameRateRanges"]) {
       int fps_n, fps_d;
       gdouble max_fps;
@@ -458,6 +469,11 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 
       formatDescription = (CMFormatDescriptionRef) [f performSelector:@selector(formatDescription)];
       dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription);
+      if ([self swapWidthHeight]) {
+        int32_t tmp = dimensions.width;
+        dimensions.width = dimensions.height;
+        dimensions.height = tmp;
+      }
       if (dimensions.width == info->width && dimensions.height == info->height) {
         found_format = TRUE;
         [device setValue:f forKey:@"activeFormat"];
@@ -502,6 +518,28 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   return YES;
 }
 
+- (void)updateConnectionOrientation
+{
+  GST_OBJECT_LOCK (element);
+  if (connection != nil)
+    [connection setVideoOrientation:orientation];
+  GST_OBJECT_UNLOCK (element);
+}
+
+- (BOOL)swapWidthHeight
+{
+  return orientation == AVCaptureVideoOrientationPortrait ||
+         orientation == AVCaptureVideoOrientationPortraitUpsideDown;
+}
+
+- (void)appendCapsTo:(GstCaps *)result format:(GstVideoFormat)gst_format width:(unsigned int)aWidth height:(unsigned int)aHeight
+{
+  if ([self swapWidthHeight])
+    gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, aHeight, aWidth, DEVICE_FPS_N, DEVICE_FPS_D));
+  else
+    gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, aWidth, aHeight, DEVICE_FPS_N, DEVICE_FPS_D));
+}
+
 - (BOOL)getSessionPresetCaps:(GstCaps *)result
 {
   NSArray *pixel_formats = output.availableVideoCVPixelFormatTypes;
@@ -512,18 +550,18 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 
 #if HAVE_IOS
     if ([session canSetSessionPreset:AVCaptureSessionPreset1920x1080])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 1920, 1080, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:1920 height:1080];
 #endif
     if ([session canSetSessionPreset:AVCaptureSessionPreset1280x720])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 1280, 720, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:1280 height:720];
     if ([session canSetSessionPreset:AVCaptureSessionPreset640x480])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 640, 480, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:640 height:480];
     if ([session canSetSessionPreset:AVCaptureSessionPresetMedium])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 480, 360, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:480 height:360];
     if ([session canSetSessionPreset:AVCaptureSessionPreset352x288])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 352, 288, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:352 height:288];
     if ([session canSetSessionPreset:AVCaptureSessionPresetLow])
-      gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, 192, 144, DEVICE_FPS_N, DEVICE_FPS_D));
+      [self appendCapsTo:result format:gst_format width:192 height:144];
   }
 
   GST_LOG_OBJECT (element, "Session presets returned the following caps %" GST_PTR_FORMAT, result);
@@ -1056,6 +1094,7 @@ enum
   PROP_DEVICE_INDEX,
   PROP_DO_STATS,
   PROP_FPS,
+  PROP_ORIENTATION,
 #if !HAVE_IOS
   PROP_CAPTURE_SCREEN,
   PROP_CAPTURE_SCREEN_CURSOR,
@@ -1063,6 +1102,28 @@ enum
 #endif
 };
 
+#define GST_TYPE_AVFVIDEOSRC_ORIENTATION (gst_avfvideosrc_orientation_get_type ())
+static GType
+gst_avfvideosrc_orientation_get_type (void)
+{
+  static GType avfvideosrc_orientation_type = 0;
+
+  if (!avfvideosrc_orientation_type) {
+    static GEnumValue orientation_types[] = {
+      { AVCaptureVideoOrientationPortrait, "AVCaptureVideoOrientationPortrait", "portrait" },
+      { AVCaptureVideoOrientationPortraitUpsideDown, "AVCaptureVideoOrientationPortraitUpsideDown", "portrait-upside-down"  },
+      { AVCaptureVideoOrientationLandscapeRight, "AVCaptureVideoOrientationLandscapeRight", "landscape-right" },
+      { AVCaptureVideoOrientationLandscapeLeft, "AVCaptureVideoOrientationLandscapeLeft", "landscape-left" },
+      { 0, NULL, NULL },
+    };
+
+    avfvideosrc_orientation_type =
+	g_enum_register_static ("GstAvfvideosrcOrientation",
+				orientation_types);
+  }
+
+  return avfvideosrc_orientation_type;
+}
 
 static void gst_avf_video_src_finalize (GObject * obj);
 static void gst_avf_video_src_get_property (GObject * object, guint prop_id,
@@ -1135,6 +1196,11 @@ gst_avf_video_src_class_init (GstAVFVideoSrcClass * klass)
       g_param_spec_int ("fps", "Frames per second",
           "Last measured framerate, if statistics are enabled",
           -1, G_MAXINT, -1, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /* Default orientation set to the iOS default */
+  g_object_class_install_property (gobject_class, PROP_ORIENTATION,
+      g_param_spec_enum ("orientation", "Orientation",
+          "Image buffer orientation", GST_TYPE_AVFVIDEOSRC_ORIENTATION,
+          AVCaptureVideoOrientationLandscapeRight, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 #if !HAVE_IOS
   g_object_class_install_property (gobject_class, PROP_CAPTURE_SCREEN,
       g_param_spec_boolean ("capture-screen", "Enable screen capture",
@@ -1209,6 +1275,11 @@ gst_avf_video_src_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_int (value, impl.fps);
       GST_OBJECT_UNLOCK (object);
       break;
+    case PROP_ORIENTATION:
+      GST_OBJECT_LOCK (object);
+      g_value_set_enum (value, impl.orientation);
+      GST_OBJECT_UNLOCK (object);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1233,6 +1304,10 @@ gst_avf_video_src_set_property (GObject * object, guint prop_id,
       impl.captureScreenMouseClicks = g_value_get_boolean (value);
       break;
 #endif
+    case PROP_ORIENTATION:
+      impl.orientation = g_value_get_enum (value);
+      [impl updateConnectionOrientation];
+      break;
     case PROP_DEVICE_INDEX:
       impl.deviceIndex = g_value_get_int (value);
       break;
