@@ -35,6 +35,7 @@
 #define VTENC_DEFAULT_QUALITY 0.5
 #define VTENC_DEFAULT_MAX_KEYFRAME_INTERVAL 0
 #define VTENC_DEFAULT_MAX_KEYFRAME_INTERVAL_DURATION 0
+#define VTENC_DEFAULT_MAX_FRAME_DELAY_COUNT kVTUnlimitedFrameDelayCount
 
 GST_DEBUG_CATEGORY (gst_vtenc_debug);
 #define GST_CAT_DEFAULT (gst_vtenc_debug)
@@ -66,7 +67,8 @@ enum
   PROP_REALTIME,
   PROP_QUALITY,
   PROP_MAX_KEYFRAME_INTERVAL,
-  PROP_MAX_KEYFRAME_INTERVAL_DURATION
+  PROP_MAX_KEYFRAME_INTERVAL_DURATION,
+  PROP_MAX_FRAME_DELAY_COUNT
 };
 
 typedef struct _GstVTEncFrame GstVTEncFrame;
@@ -108,6 +110,8 @@ static void gst_vtenc_session_configure_max_keyframe_interval_duration
     (GstVTEnc * self, VTCompressionSessionRef session, gdouble duration);
 static void gst_vtenc_session_configure_bitrate (GstVTEnc * self,
     VTCompressionSessionRef session, guint bitrate);
+static void gst_vtenc_session_configure_max_frame_delay_count (GstVTEnc * self,
+    VTCompressionSessionRef session, gint max_frame_delay_count);
 static OSStatus gst_vtenc_session_configure_property_int (GstVTEnc * self,
     VTCompressionSessionRef session, CFStringRef name, gint value);
 static OSStatus gst_vtenc_session_configure_property_double (GstVTEnc * self,
@@ -240,6 +244,14 @@ gst_vtenc_class_init (GstVTEncClass * klass)
           "Maximum number of nanoseconds between keyframes (0 = no limit)", 0,
           G_MAXUINT64, VTENC_DEFAULT_MAX_KEYFRAME_INTERVAL_DURATION,
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class,
+      PROP_MAX_FRAME_DELAY_COUNT,
+      g_param_spec_int ("max-frame-delay-count",
+          "Max Frame Delay Count",
+          "maximum frame delay count is the maximum number of frames that the compressor is allowed to hold before it must output a compressed frame. (-1 = no limit)",
+          -1, G_MAXINT, VTENC_DEFAULT_MAX_FRAME_DELAY_COUNT,
+          G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -295,6 +307,33 @@ gst_vtenc_set_bitrate (GstVTEnc * self, guint bitrate)
 
   if (self->session != NULL)
     gst_vtenc_session_configure_bitrate (self, self->session, bitrate);
+
+  GST_OBJECT_UNLOCK (self);
+}
+
+static gint
+gst_vtenc_get_max_frame_delay_count (GstVTEnc * self)
+{
+  guint result;
+
+  GST_OBJECT_LOCK (self);
+  result = self->max_frame_delay_count;
+  GST_OBJECT_UNLOCK (self);
+
+  return result;
+}
+
+static void
+gst_vtenc_set_max_frame_delay_count (GstVTEnc * self,
+    gint max_frame_delay_count)
+{
+  GST_OBJECT_LOCK (self);
+
+  self->max_frame_delay_count = max_frame_delay_count;
+
+  if (self->session != NULL)
+    gst_vtenc_session_configure_max_frame_delay_count (self, self->session,
+        max_frame_delay_count);
 
   GST_OBJECT_UNLOCK (self);
 }
@@ -446,6 +485,9 @@ gst_vtenc_get_property (GObject * obj, guint prop_id, GValue * value,
       g_value_set_uint64 (value,
           gst_vtenc_get_max_keyframe_interval_duration (self));
       break;
+    case PROP_MAX_FRAME_DELAY_COUNT:
+      g_value_set_int (value, gst_vtenc_get_max_frame_delay_count (self));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop_id, pspec);
       break;
@@ -477,6 +519,9 @@ gst_vtenc_set_property (GObject * obj, guint prop_id, const GValue * value,
     case PROP_MAX_KEYFRAME_INTERVAL_DURATION:
       gst_vtenc_set_max_keyframe_interval_duration (self,
           g_value_get_uint64 (value));
+      break;
+    case PROP_MAX_FRAME_DELAY_COUNT:
+      gst_vtenc_set_max_frame_delay_count (self, g_value_get_int (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop_id, pspec);
@@ -826,6 +871,8 @@ gst_vtenc_create_session (GstVTEnc * self)
       gst_vtenc_get_realtime (self));
   gst_vtenc_session_configure_allow_frame_reordering (self, session,
       gst_vtenc_get_allow_frame_reordering (self));
+  gst_vtenc_session_configure_max_frame_delay_count (self, session,
+      gst_vtenc_get_max_frame_delay_count (self));
   gst_vtenc_set_quality (self, self->quality);
 
   if (self->dump_properties) {
@@ -953,6 +1000,14 @@ gst_vtenc_session_configure_bitrate (GstVTEnc * self,
 {
   gst_vtenc_session_configure_property_int (self, session,
       kVTCompressionPropertyKey_AverageBitRate, bitrate);
+}
+
+static void
+gst_vtenc_session_configure_max_frame_delay_count (GstVTEnc * self,
+    VTCompressionSessionRef session, gint max_frame_delay_count)
+{
+  gst_vtenc_session_configure_property_int (self, session,
+      kVTCompressionPropertyKey_MaxFrameDelayCount, max_frame_delay_count);
 }
 
 static void
