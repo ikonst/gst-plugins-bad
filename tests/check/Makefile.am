@@ -204,6 +204,12 @@ else
 check_gl=
 endif
 
+if HAVE_AVFOUNDATION
+check_avfvideosrc = elements/avfvideosrc
+else
+check_avfvideosrc =
+endif
+
 VALGRIND_TO_FIX = \
 	elements/mpeg2enc \
 	elements/mplex    \
@@ -235,6 +241,7 @@ check_PROGRAMS = \
 	$(check_opus)  \
 	$(check_curl) \
 	$(check_shm) \
+	$(check_avfvideosrc) \
 	elements/aiffparse \
 	elements/autoconvert \
 	elements/autovideoconvert \
@@ -523,6 +530,9 @@ elements_compositor_CFLAGS = $(GST_BASE_CFLAGS) $(CFLAGS) $(AM_CFLAGS)
 elements_hlsdemux_m3u8_CFLAGS = $(GST_BASE_CFLAGS) $(AM_CFLAGS) -I$(top_srcdir)/ext/hls
 elements_hlsdemux_m3u8_LDADD = $(GST_BASE_LIBS) $(LDADD)
 elements_hlsdemux_m3u8_SOURCES = elements/hlsdemux_m3u8.c
+
+elements_avfvideosrc_LDADD = $(GST_BASE_LIBS) -lgstvideo-@GST_API_VERSION@ $(LDADD)
+elements_avfvideosrc_CFLAGS = $(GST_PLUGINS_BASE_CFLAGS) $(GST_BASE_CFLAGS) $(AM_CFLAGS)
 
 orc_compositor_CFLAGS = $(ORC_CFLAGS)
 orc_compositor_LDADD = $(ORC_LIBS) -lorc-test-0.4
