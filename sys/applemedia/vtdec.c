@@ -383,7 +383,7 @@ gst_vtdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   status =
       VTDecompressionSessionDecodeFrame (vtdec->session, cm_sample_buffer,
       input_flags, frame, NULL);
-  if (status != noErr && FALSE)
+  if (status != noErr)
     goto error;
 
   GST_LOG_OBJECT (vtdec, "submitted input frame %d", decode_frame_number);
@@ -394,9 +394,8 @@ out:
   return ret;
 
 error:
-  GST_ELEMENT_ERROR (vtdec, STREAM, DECODE, (NULL),
-      ("VTDecompressionSessionDecodeFrame returned %d", (int) status));
-  ret = GST_FLOW_ERROR;
+  GST_VIDEO_DECODER_ERROR (vtdec, 1, STREAM, DECODE, (NULL),
+      ("VTDecompressionSessionDecodeFrame returned %d", (int) status), ret);
   goto out;
 }
 
