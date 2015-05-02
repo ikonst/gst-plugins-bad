@@ -22,7 +22,7 @@
 #endif
 
 #include <Foundation/Foundation.h>
-#include "corevideomemory.h"
+#include <gst/applemedia/corevideomemory.h>
 #ifdef HAVE_IOS
 #include "iosassetsrc.h"
 #else

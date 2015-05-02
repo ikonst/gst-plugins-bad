@@ -25,9 +25,9 @@
 #import <AppKit/AppKit.h>
 #include <gst/gl/cocoa/gstglcontext_cocoa.h>
 #endif
+#include <gst/applemedia/coremediabuffer.h>
+#include <gst/applemedia/corevideobuffer.h>
 #include "corevideotexturecache.h"
-#include "coremediabuffer.h"
-#include "corevideobuffer.h"
 #include "vtutil.h"
 
 typedef struct _ContextThreadData

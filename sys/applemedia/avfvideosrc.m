@@ -29,7 +29,7 @@
 #endif
 #include <gst/video/video.h>
 #include <gst/gl/gstglcontext.h>
-#include "coremediabuffer.h"
+#include <gst/applemedia/coremediabuffer.h>
 #include "corevideotexturecache.h"
 
 #define DEFAULT_DEVICE_INDEX  -1

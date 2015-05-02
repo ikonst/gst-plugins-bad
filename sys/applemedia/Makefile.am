@@ -3,18 +3,8 @@ plugin_LTLIBRARIES = libgstapplemedia.la
 libgstapplemedia_la_SOURCES =			\
 	plugin.m				\
 	vtutil.c				\
-	corevideomemory.c			\
-	corevideobuffer.c			\
-	coremediabuffer.c			\
 	corevideotexturecache.m 		\
 	atdec.c
-
-libgstapplemedia_la_CPPFLAGS =			\
-	-Dgst_core_media_buffer_new=gst_core_media_buffer_priv_new		\
-	-Dgst_core_media_buffer_get_type=gst_core_media_buffer_priv_get_type	\
-	-Dgst_core_media_buffer_get_pixel_buffer=gst_core_media_buffer_priv_get_pixel_buffer\
-	-Dgst_core_video_buffer_new=gst_core_video_buffer_priv_new		\
-	-Dgst_core_video_buffer_get_type=gst_core_video_buffer_priv_get_type
 
 libgstapplemedia_la_CFLAGS =			\
 	-I$(top_srcdir)/gst-libs                \
@@ -35,6 +25,7 @@ libgstapplemedia_la_OBJCFLAGS += -fobjc-abi-version=2 -fobjc-legacy-dispatch
 endif
 
 libgstapplemedia_la_LIBADD =						\
+	$(top_builddir)/gst-libs/gst/applemedia/libgstapplemedia-$(GST_API_VERSION).la \
 	$(top_builddir)/gst-libs/gst/gl/libgstgl-$(GST_API_VERSION).la 	\
 	$(GST_BASE_LIBS)						\
 	$(GST_PLUGINS_BASE_LIBS)					\
@@ -60,8 +51,6 @@ noinst_HEADERS =				\
 	vtenc.h					\
 	vtdec.h					\
 	vtutil.h				\
-	corevideobuffer.h			\
-	coremediabuffer.h			\
 	atdec.h 				\
 	iosassetsrc.h				\
 	avfassetsrc.h
