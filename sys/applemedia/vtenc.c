@@ -23,8 +23,8 @@
 
 #include "vtenc.h"
 
-#include "coremediabuffer.h"
-#include "corevideobuffer.h"
+#include <gst/applemedia/coremediabuffer.h>
+#include <gst/applemedia/corevideobuffer.h>
 #include "vtutil.h"
 #include <gst/pbutils/codec-utils.h>
 

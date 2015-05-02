@@ -39,7 +39,7 @@
 #endif
 
 #include "avfassetsrc.h"
-#include "coremediabuffer.h"
+#include <gst/applemedia/coremediabuffer.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_avf_asset_src_debug);
 #define GST_CAT_DEFAULT gst_avf_asset_src_debug

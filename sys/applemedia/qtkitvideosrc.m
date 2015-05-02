@@ -19,7 +19,7 @@
 
 #include "qtkitvideosrc.h"
 
-#import "corevideobuffer.h"
+#import <gst/applemedia/corevideobuffer.h>
 
 #import <QTKit/QTKit.h>
 

@@ -40,10 +40,10 @@
 #include <gst/video/video.h>
 #include <gst/video/gstvideodecoder.h>
 #include <gst/gl/gstglcontext.h>
+#include <gst/applemedia/coremediabuffer.h>
+#include <gst/applemedia/corevideobuffer.h>
 #include "vtdec.h"
 #include "vtutil.h"
-#include "corevideobuffer.h"
-#include "coremediabuffer.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_vtdec_debug_category);
 #define GST_CAT_DEFAULT gst_vtdec_debug_category
