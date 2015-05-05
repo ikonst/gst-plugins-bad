@@ -450,6 +450,13 @@ gst_vtdec_create_session (GstVtdec * vtdec, GstVideoFormat format)
       vtdec->video_info.width);
   gst_vtutil_dict_set_i32 (output_image_buffer_attrs, kCVPixelBufferHeightKey,
       vtdec->video_info.height);
+#ifdef HAVE_IOS
+  gst_vtutil_dict_set_i32 (output_image_buffer_attrs,
+      kCVPixelBufferOpenGLESCompatibilityKey, 1);
+#else
+  gst_vtutil_dict_set_i32 (output_image_buffer_attrs,
+      kCVPixelBufferOpenGLCompatibilityKey, 1);
+#endif
 
   callback.decompressionOutputCallback = gst_vtdec_session_output_callback;
   callback.decompressionOutputRefCon = vtdec;
