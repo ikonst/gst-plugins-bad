@@ -654,7 +654,8 @@ gst_vtdec_session_output_callback (void *decompression_output_ref_con,
       frame->decode_frame_number, image_buffer);
 
   if (status != noErr) {
-    GST_ERROR_OBJECT (vtdec, "Error decoding frame %d", (int) status);
+    GST_ERROR_OBJECT (vtdec, "Error decoding frame %d: %d",
+        frame->system_frame_number, (int) status);
     goto drop;
   }
 
