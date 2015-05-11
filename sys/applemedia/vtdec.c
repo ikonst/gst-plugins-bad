@@ -102,14 +102,8 @@ const CFStringRef
 CFSTR ("RequireHardwareAcceleratedVideoDecoder");
 #endif
 
-#ifdef HAVE_IOS
-#define GST_VTDEC_VIDEO_FORMAT_STR "NV12"
-#else
-#define GST_VTDEC_VIDEO_FORMAT_STR "UYVY"
-#endif
-
 #define VIDEO_SRC_CAPS \
-    GST_VIDEO_CAPS_MAKE(GST_VTDEC_VIDEO_FORMAT_STR) ";" \
+    GST_VIDEO_CAPS_MAKE("NV12") ";" \
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES \
     (GST_CAPS_FEATURE_MEMORY_GL_MEMORY, \
         "RGBA") ";"
