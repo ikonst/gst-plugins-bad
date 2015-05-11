@@ -1332,6 +1332,11 @@ gst_vtenc_enqueue_buffer (void *outputCallbackRefCon,
     goto beach;
   }
 
+  if (!frame) {
+    GST_WARNING_OBJECT (self, "No corresponding frame found!");
+    goto beach;
+  }
+
   /* This may happen if we don't have enough bitrate */
   if (sampleBuffer == NULL)
     goto beach;
