@@ -258,10 +258,10 @@ gst_avf_asset_src_change_state (GstElement * element, GstStateChange transition)
         gst_avf_asset_src_stop_all (self);
         return GST_STATE_CHANGE_FAILURE;
       }
+      gst_avf_asset_src_start (self);
       break;
     }
     case GST_STATE_CHANGE_READY_TO_PAUSED:
-      gst_avf_asset_src_start (self);
       gst_avf_asset_src_start_reading (self);
       break;
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
@@ -277,9 +277,9 @@ gst_avf_asset_src_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_avf_asset_src_stop_reading (self);
-      gst_avf_asset_src_stop (self);
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
+      gst_avf_asset_src_stop (self);
       [self->reader release];
       break;
     default:
