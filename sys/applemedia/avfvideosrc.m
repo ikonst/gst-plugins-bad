@@ -76,6 +76,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
   GstBaseSrc *baseSrc;
   GstPushSrc *pushSrc;
 
+  AVCaptureSession *externalSession;
   gint deviceIndex;
   BOOL doStats;
 
@@ -91,6 +92,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
   NSConditionLock *bufQueueLock;
   NSMutableArray *bufQueue;
   BOOL stopRequest;
+  BOOL disableDelegate;
 
   GstCaps *caps;
   GstVideoFormat internalFormat;
@@ -115,6 +117,8 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
 - (id)initWithSrc:(GstPushSrc *)src;
 - (void)finalize;
 
+@property (readonly) AVCaptureSession *session;
+@property (retain) AVCaptureSession *externalSession;
 @property int deviceIndex;
 @property BOOL doStats;
 @property int fps;
@@ -125,6 +129,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
 
 - (BOOL)openScreenInput;
 - (BOOL)openDeviceInput;
+- (BOOL)findExternalDeviceInput;
 - (BOOL)openDevice;
 - (void)closeDevice;
 - (GstVideoFormat)getGstVideoFormat:(NSNumber *)pixel_format;
@@ -153,8 +158,16 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 
 @implementation GstAVFVideoSrcImpl
 
-@synthesize deviceIndex, doStats, fps, orientation, captureScreen,
-            captureScreenCursor, captureScreenMouseClicks;
+@synthesize
+  session,
+  externalSession,
+  deviceIndex,
+  doStats,
+  fps,
+  orientation,
+  captureScreen,
+  captureScreenCursor,
+  captureScreenMouseClicks;
 
 - (id)init
 {
@@ -168,6 +181,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     baseSrc = GST_BASE_SRC_CAST (src);
     pushSrc = src;
 
+    externalSession = nil;
     deviceIndex = DEFAULT_DEVICE_INDEX;
     orientation = AVCaptureVideoOrientationLandscapeRight;
     captureScreen = NO;
@@ -194,6 +208,9 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   mainQueue = NULL;
   dispatch_release (workerQueue);
   workerQueue = NULL;
+
+  /* avoid triggering property observers */
+  [self->externalSession release];
 
   [super finalize];
 }
@@ -270,8 +287,30 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   screenInput.capturesMouseClicks = captureScreenMouseClicks;
   input = screenInput;
   [input retain];
+  device = nil;
   return YES;
 #endif
+}
+
+- (BOOL)findExternalDeviceInput
+{
+  NSArray *inputs = [externalSession inputs];
+
+  input = [[inputs firstObject] retain];
+  if (input == nil) {
+    GST_ERROR_OBJECT (element, "External session has no inputs.");
+    return NO;
+  }
+
+  if ([inputs count] > 1)
+    GST_WARNING_OBJECT (element, "External session has more than one input; taking the first input.");
+
+  if ([input isKindOfClass:[AVCaptureDeviceInput class]])
+    device = [[(AVCaptureDeviceInput*)input device] retain];
+  else
+    device = nil;
+
+  return YES;
 }
 
 - (BOOL)openDevice
@@ -283,22 +322,28 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   dispatch_sync (mainQueue, ^{
     BOOL ret;
 
-    if (captureScreen)
-      ret = [self openScreenInput];
-    else
-      ret = [self openDeviceInput];
+    if (externalSession == nil) {
+      if (captureScreen)
+        ret = [self openScreenInput];
+      else
+        ret = [self openDeviceInput];
+    } else {
+      ret = [self findExternalDeviceInput];
+    }
 
     if (!ret)
       return;
 
     output = [[AVCaptureVideoDataOutput alloc] init];
-    [output setSampleBufferDelegate:self
-                              queue:workerQueue];
     output.alwaysDiscardsLateVideoFrames = YES;
     output.videoSettings = nil; /* device native format */
 
-    session = [[AVCaptureSession alloc] init];
-    [session addInput:input];
+    if (externalSession == nil) {
+      session = [[AVCaptureSession alloc] init];
+      [session addInput:input];
+    } else {
+      session = [externalSession retain];
+    }
     [session addOutput:output];
 
     /* retained by session */
@@ -321,24 +366,25 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   GST_DEBUG_OBJECT (element, "Closing device");
 
   dispatch_sync (mainQueue, ^{
-    g_assert (![session isRunning]);
+    if (externalSession == nil) {
+      g_assert (![session isRunning]);
+      [session removeInput:input];
+    }
+    [session removeOutput:output];
 
     connection = nil;
     inputClock = nil;
 
-    [session removeInput:input];
-    [session removeOutput:output];
-
     [session release];
     session = nil;
-
-    [input release];
-    input = nil;
 
     [output release];
     output = nil;
 
-    if (!captureScreen) {
+    [input release];
+    input = nil;
+
+    if (device != nil) {
       [device release];
       device = nil;
     }
@@ -667,6 +713,13 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   internalFormat = GST_VIDEO_FORMAT_UNKNOWN;
   latency = gst_util_uint64_scale (GST_SECOND, info.fps_d, info.fps_n);
 
+  if (externalSession != nil) {
+    if (caps)
+      gst_caps_unref (caps);
+    caps = gst_caps_copy (new_caps);
+    return YES;
+  }
+
   dispatch_sync (mainQueue, ^{
     int newformat;
 
@@ -746,6 +799,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     if (caps)
       gst_caps_unref (caps);
     caps = gst_caps_copy (new_caps);
+
     [session startRunning];
 
     /* Unlock device configuration only after session is started so the session
@@ -769,13 +823,25 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   count = 0;
   fps = -1;
 
+  /* setting the delegate only after initialization is done */
+  [output setSampleBufferDelegate:self
+                            queue:workerQueue];
+  disableDelegate = NO;
+
   return YES;
 }
 
 - (BOOL)stop
 {
-  dispatch_sync (mainQueue, ^{ [session stopRunning]; });
-  dispatch_sync (workerQueue, ^{});
+  if (externalSession == nil) {
+    dispatch_sync (mainQueue, ^{ [session stopRunning]; });
+  }
+
+  /* remove the delegate and ensure any pending delegates are no-op */
+  [output setSampleBufferDelegate:nil queue:NULL];
+  [bufQueueLock lock];
+  disableDelegate = YES;
+  [bufQueueLock unlockWithCondition:HAS_BUFFER_OR_STOP_REQUEST];
 
   [bufQueueLock release];
   bufQueueLock = nil;
@@ -892,7 +958,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 
   [bufQueueLock lock];
 
-  if (stopRequest) {
+  if (stopRequest || disableDelegate) {
     [bufQueueLock unlock];
     return;
   }
@@ -1091,6 +1157,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
 enum
 {
   PROP_0,
+  PROP_SESSION,
   PROP_DEVICE_INDEX,
   PROP_DO_STATS,
   PROP_FPS,
@@ -1183,6 +1250,10 @@ gst_avf_video_src_class_init (GstAVFVideoSrcClass * klass)
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&src_template));
 
+  g_object_class_install_property (gobject_class, PROP_SESSION,
+      g_param_spec_pointer ("session", "Session",
+          "Pointer to AVCaptureSession to use instead of internal session (assumes already running)",
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_DEVICE_INDEX,
       g_param_spec_int ("device-index", "Device Index",
           "The zero-based device index",
@@ -1264,6 +1335,9 @@ gst_avf_video_src_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_boolean (value, impl.captureScreenMouseClicks);
       break;
 #endif
+    case PROP_SESSION:
+      g_value_set_pointer (value, impl.externalSession);
+      break;
     case PROP_DEVICE_INDEX:
       g_value_set_int (value, impl.deviceIndex);
       break;
@@ -1307,6 +1381,13 @@ gst_avf_video_src_set_property (GObject * object, guint prop_id,
     case PROP_ORIENTATION:
       impl.orientation = g_value_get_enum (value);
       [impl updateConnectionOrientation];
+      break;
+    case PROP_SESSION:
+      if (impl.session == nil) {
+        impl.externalSession = g_value_get_pointer (value);
+      } else {
+        GST_WARNING_OBJECT (object, "Cannot change session while running");
+      }
       break;
     case PROP_DEVICE_INDEX:
       impl.deviceIndex = g_value_get_int (value);
