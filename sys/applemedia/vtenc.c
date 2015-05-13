@@ -1328,7 +1328,8 @@ gst_vtenc_enqueue_buffer (void *outputCallbackRefCon,
   }
 
   if (!frame) {
-    GST_WARNING_OBJECT (self, "No corresponding frame found!");
+    GST_WARNING_OBJECT (self, "Frame %d not found; encoder possibly reset",
+        GPOINTER_TO_INT (sourceFrameRefCon));
     goto beach;
   }
 
