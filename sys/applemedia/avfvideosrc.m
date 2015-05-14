@@ -140,6 +140,7 @@ G_DEFINE_TYPE (GstAVFVideoSrc, gst_avf_video_src, GST_TYPE_PUSH_SRC);
 - (BOOL)setDeviceCaps:(GstVideoInfo *)info;
 - (BOOL)getSessionPresetCaps:(GstCaps *)result;
 - (BOOL)setSessionPresetCaps:(GstVideoInfo *)info;
+- (GstCaps *)getCapsWithFilter:(GstCaps *)filter;
 - (GstCaps *)getCaps;
 - (BOOL)setCaps:(GstCaps *)new_caps;
 - (BOOL)start;
@@ -652,13 +653,33 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   return YES;
 }
 
+- (GstCaps *)getCapsWithFilter:(GstCaps *)filter
+{
+  GstCaps * result;
+
+  if (session == nil) {
+    GST_DEBUG_OBJECT (baseSrc, "no session, getting template caps");
+    return GST_BASE_SRC_CLASS (parent_class)->get_caps (baseSrc, filter);
+  }
+
+  result = [self getCaps];
+
+  if (filter) {
+    GstCaps *intersection;
+
+    intersection =
+        gst_caps_intersect_full (filter, result, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (result);
+    return intersection;
+  } else {
+    return result;
+  }
+}
+
 - (GstCaps *)getCaps
 {
   GstCaps *result;
   NSArray *pixel_formats;
-
-  if (session == nil)
-    return NULL; /* BaseSrc will return template caps */
 
   result = gst_caps_new_empty ();
   pixel_formats = output.availableVideoCVPixelFormatTypes;
@@ -1419,7 +1440,7 @@ gst_avf_video_src_get_caps (GstBaseSrc * basesrc, GstCaps * filter)
   GstCaps *ret;
 
   OBJC_CALLOUT_BEGIN ();
-  ret = [GST_AVF_VIDEO_SRC_IMPL (basesrc) getCaps];
+  ret = [GST_AVF_VIDEO_SRC_IMPL (basesrc) getCapsWithFilter:filter];
   OBJC_CALLOUT_END ();
 
   return ret;
