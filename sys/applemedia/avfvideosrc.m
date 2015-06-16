@@ -396,13 +396,20 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   });
 }
 
-
-#define GST_AVF_CAPS_NEW(format, w, h, fps_n, fps_d)                  \
+#define GST_AVF_CAPS_NEW(format, w, h, fps_n, fps_d)           \
     (gst_caps_new_simple ("video/x-raw",                              \
         "width", G_TYPE_INT, w,                                       \
         "height", G_TYPE_INT, h,                                      \
         "format", G_TYPE_STRING, gst_video_format_to_string (format), \
         "framerate", GST_TYPE_FRACTION, (fps_n), (fps_d),             \
+        NULL))
+
+#define GST_AVF_FPS_RANGE_CAPS_NEW(format, w, h, min_fps_n, min_fps_d, max_fps_n, max_fps_d) \
+    (gst_caps_new_simple ("video/x-raw",                              \
+        "width", G_TYPE_INT, w,                                       \
+        "height", G_TYPE_INT, h,                                      \
+        "format", G_TYPE_STRING, gst_video_format_to_string (format), \
+        "framerate", GST_TYPE_FRACTION_RANGE, (min_fps_n), (min_fps_d), (max_fps_n), (max_fps_d), \
         NULL))
 
 - (GstVideoFormat)getGstVideoFormat:(NSNumber *)pixel_format
@@ -477,22 +484,36 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
       dimensions.height = tmp;
     }
     for (NSObject *rate in [f valueForKey:@"videoSupportedFrameRateRanges"]) {
-      int fps_n, fps_d;
-      gdouble max_fps;
+      int min_fps_n, min_fps_d, max_fps_n, max_fps_d;
+      gdouble min_fps, max_fps;
+
+      [[rate valueForKey:@"minFrameRate"] getValue:&min_fps];
+      gst_util_double_to_fraction (min_fps, &min_fps_n, &min_fps_d);
 
       [[rate valueForKey:@"maxFrameRate"] getValue:&max_fps];
-      gst_util_double_to_fraction (max_fps, &fps_n, &fps_d);
+      gst_util_double_to_fraction (max_fps, &max_fps_n, &max_fps_d);
 
       for (NSNumber *pixel_format in pixel_formats) {
+        GstCaps *format_caps, *rgba_gl_caps = NULL;
         GstVideoFormat gst_format = [self getGstVideoFormat:pixel_format];
-        if (gst_format != GST_VIDEO_FORMAT_UNKNOWN)
-          gst_caps_append (result, GST_AVF_CAPS_NEW (gst_format, dimensions.width, dimensions.height, fps_n, fps_d));
+
+        if (gst_format == GST_VIDEO_FORMAT_UNKNOWN)
+          continue;
+
+        if (min_fps != max_fps)
+          format_caps = GST_AVF_FPS_RANGE_CAPS_NEW (gst_format, dimensions.width, dimensions.height, min_fps_n, min_fps_d, max_fps_n, max_fps_d);
+        else
+          format_caps = GST_AVF_CAPS_NEW (gst_format, dimensions.width, dimensions.height, max_fps_n, max_fps_d);
 
         if (gst_format == GST_VIDEO_FORMAT_BGRA) {
-          GstCaps *rgba_caps = GST_AVF_CAPS_NEW (GST_VIDEO_FORMAT_RGBA, dimensions.width, dimensions.height, fps_n, fps_d);
-          gst_caps_set_features (rgba_caps, 0, gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_GL_MEMORY, NULL));
-          gst_caps_append (result, rgba_caps);
+          rgba_gl_caps = gst_caps_copy (format_caps);
+          gst_caps_set_simple (rgba_gl_caps, "format", G_TYPE_STRING, gst_video_format_to_string (GST_VIDEO_FORMAT_RGBA), NULL);
+          gst_caps_set_features (rgba_gl_caps, 0, gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_GL_MEMORY, NULL));
         }
+
+        gst_caps_append (result, format_caps);
+        if (rgba_gl_caps != NULL)
+          gst_caps_append (result, rgba_gl_caps);
       }
     }
   }
@@ -525,10 +546,12 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         found_format = TRUE;
         [device setValue:f forKey:@"activeFormat"];
         for (NSObject *rate in [f valueForKey:@"videoSupportedFrameRateRanges"]) {
-          gdouble max_frame_rate;
+          gdouble min_frame_rate, max_frame_rate;
 
+          [[rate valueForKey:@"minFrameRate"] getValue:&min_frame_rate];
           [[rate valueForKey:@"maxFrameRate"] getValue:&max_frame_rate];
-          if (fabs (framerate - max_frame_rate) < 0.00001) {
+          if ((framerate >= min_frame_rate - 0.00001) &&
+              (framerate <= max_frame_rate + 0.00001)) {
             NSValue *min_frame_duration, *max_frame_duration;
 
             found_framerate = TRUE;
